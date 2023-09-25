@@ -1,0 +1,263 @@
+clc; clear all; close all;
+
+HVAC_par %Load model
+Q_P = Q_P_data;
+
+
+c_P = 1; %People inforamtion active
+c_O = 1; %Outside inforamtion active
+
+k_0 = max([M.d_I,M.d_D])+2;
+
+%  proces 1. red
+Q_I_p = 0*ones(k_0,1);
+Q_D_p = 0*ones(k_0,1);
+T_z_p = 295*ones(k_0,1);
+T_O_p = T_o_data;
+Q_P_p  = Q_P;
+
+%  model procesa 1. reda
+Model = M;
+Model.N = 0; %0.5000;
+Model.K_D = M.K_D;  %11.0657;
+Model.tau_D = M.tau_D;  %1200;
+% Model.K_I = M.K_I;  %1;
+% Model.tau_I = M.tau_I;  %1800;
+%Model.a_I = M.a_I;  %3;
+Model.b_I = M.b_I;  %-117.2899;
+% Model.u_1 = M.u_1;  %-2.5000;
+% Model.u_2 = M.u_2; %-1.0000e-03;
+% Model.u_3 = M.u_3; %80.0000;
+% Model.d_D = M.d_D; %1;
+% Model.d_I = M.d_I; %4;
+
+Q_I_m = 0*ones(k_0,1);
+Q_D_m = 0*ones(k_0,1);
+T_z_m = 295*ones(k_0,1);
+T_O_m = c_O*T_o_data + (1-c_O)*294;
+Q_P_m = c_P*Q_P;
+
+M.act_P = 1;
+Model.act_P = 1; %0;
+
+% parametri simulacije
+Nsim = 10000;
+yp=T_z_p(end); ym=T_z_m(end);
+w = 295*ones(Nsim,1);
+w(2000:5000) = 296;
+w(8000:10000) = 294;
+dw = 1;
+wlb = w - dw;
+wub = w + dw;
+
+z_sig = 2;
+sigma_0 = (dw/z_sig)^2;
+var2 = sigma_0;
+n_var = 1;
+sig = sqrt(var2/n_var);
+mu = (wlb(1) + z_sig*sig) - yp; %(wlb(1) + 3*sqrt(sigma2/n_var));
+
+U=0*ones(k_0,1); Ym=T_z_m; Yp= T_z_p;  W = T_z_p;  uZ=0*ones(k_0,1); Ws = T_z_p;
+V = sig*ones(k_0,1);
+
+% referenèni model
+ar=0.7; br=(1-ar); H=10;
+N1 = 1;
+N2 = H;
+% ---- inicializacija -----
+swarm_size = 10;
+for i = 1 : swarm_size
+    swarm(i, 1, 1) = i;
+end
+
+u = 0; Maxu = 6; Deltau = 0.5;
+
+t1 = clock;
+
+for iSim = k_0:Nsim
+
+    %e = w(iSim)-yp;
+    w_sigma = min((wlb(iSim) + z_sig*sig),w(iSim));
+    e = w_sigma - yp;
+    ymRefH=ym+e*(1-ar^H);
+    %ymRefH2=ym+e*(1-ar^H/2);
+    % PSO algoritem
+    iterations = 100;
+    inertia = 1.0;
+    correction_factor = 2;
+
+    % ---- inicializacija -----
+    for i = 1 : swarm_size
+        %      swarm(i, 1, 1) =  u - round(swarm_size/2)*Maxu/swarm_size + i * (Deltau);
+        swarm(i, 1, 1) =  i * (Maxu/swarm_size)*0.1 + u ;
+    end
+
+    swarm(:, 4, 1) = 1000;          % najboljša vrednsot do sedaj
+    swarm(:, 2, :) = 0;             % zaèetna hitrost
+
+    term = 1000; termMax = 0.02;
+    % izdelaj termination criteria
+    while term > termMax
+        %for iter = 1 : iterations
+
+        %-- evaluacija pozicije in kriterijske funkcije ---
+        for i = 1 : swarm_size
+
+            swarm(i, 1, 1) = swarm(i, 1, 1) + swarm(i, 2, 1);     % popravek pozicije x
+            ux = swarm(i, 1, 1);
+
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+            h0 = k_0-1;
+            T_z_m_H(1:h0) = T_z_m((end-h0+1):end);
+            Q_I_m_H = Q_I_m((end-h0+1):end);
+            Q_D_m_H = Q_D_m((end-h0+1):end);
+            T_O_m_H = T_O_m((iSim-h0+1):iSim+H-1);
+            Q_P_m_H = Q_P_m((iSim-h0+1):iSim+H-1);
+            for h = (h0+1):1:(h0+H)
+                [T_z_m_H(h), Q_I_m_H(h), Q_D_m_H(h)] = HVAC(T_z_m_H(h-1), T_z_m_H(h-Model.d_I-1),  T_z_m_H(h-Model.d_D-1), ux, ...
+                    T_O_m_H(h-Model.d_I-1), T_O_m_H(h-Model.d_D-1), Q_I_m_H(h-1), Q_D_m_H(h-1), Q_P_m_H(h-1), Model);
+            end
+            ymH = T_z_m_H(h0+H);
+            %ymH2 = T_z_m_H(h0+H/2);
+            %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+            if abs(ux) > Maxu
+                weightU = 1000;
+            else
+                weightU = 0;
+            end
+
+            if abs(ux-uZ) > Deltau
+                weightUz = 1000;
+            else
+                weightUz = 0;
+            end
+            %
+
+
+            val= (ymH-ymRefH).^2 + weightU + weightUz;        % izraèun kriterijske funkcije
+            %val= sum(((T_z_m_H(h0+N1:h0+N2-1)-T_z_m_H(h0+N1+1:h0+N2))-(ym+e*(1-ar.^(N1:N2-1))-(ym+e*(1-ar.^(N1+1:N2))))).^2) + weightU + weightUz;  
+
+            if val < swarm(i, 4, 1)                 % èe je nova pozicija boljša
+                swarm(i, 3, 1) = swarm(i, 1, 1);    % popravek pozicije x,
+                swarm(i, 4, 1) = val;
+                T_z_m_H_best = T_z_m_H; % najboljša vrednsot delca - pBest
+
+            end
+        end
+
+        swarm(1:swarm_size,1,1);
+        term = std(swarm(1:swarm_size,1,1));
+
+        [temp, gbest] = min(swarm(:, 4, 1));        % gBest
+
+        %-- popravek pozicije delca
+        for i = 1 : swarm_size
+            swarm(i, 2, 1) = rand*inertia*swarm(i, 2, 1) + correction_factor*rand*(swarm(i, 3, 1) - swarm(i, 1, 1)) ...
+                + correction_factor*rand*(swarm(gbest, 3, 1) - swarm(i, 1, 1));   %x komponenta hitrosti
+        end
+
+        %% Plotanje swarma
+        %    clf
+        %    plot(swarm(:, 1, 1), 'x')   %  izris premikanja delca
+        %    axis([0 10 -3 3])
+        %    pause(.2)
+    end
+
+    if 0
+        figure(2); hold off;
+        plot(0:h0,Yp((end-h0):end),'b'); hold on;
+        plot(0:h0,Ym((end-h0):end),'r')
+        plot(h0:h0+H,T_z_m_H_best(h0:h0+H),'r--');
+        plot(h0:h0+H,ym+e*(1-ar.^(0:H)),'k');
+        plot(h0:h0+H,[ym, repelem(ymRefH,1,H)],'m--');
+        xline(h0)
+        legend('Proces past','Model past','Model future','Reference future','Reference PFC')
+        pause(0.0001)
+    end
+
+    u = swarm(gbest,1,1);
+    uZ = u;
+
+    % simulacija procesa
+    d = -0.2; noise = 0.01;
+    up = u;
+    %     if iSim > round(2*Nsim/4)
+    %         up = u + d;
+    %     end
+
+    %yp = ap*ypZ + bp*up;
+    %yp = yp + noise*randn(1,1);
+    %ypZ = yp;
+
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    [T_z_p(iSim), Q_I_p(iSim), Q_D_p(iSim)] = HVAC(T_z_p(iSim-1), T_z_p(iSim-M.d_I-1), T_z_p(iSim-M.d_D-1), up,...
+        T_O_p(iSim-M.d_I-1), T_O_p(iSim-M.d_D-1), Q_I_p(iSim-1), Q_D_p(iSim-1), Q_P_p(iSim-1), M);
+    yp = T_z_p(iSim) + noise*randn(1,1);
+
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    if abs(w(iSim)- w(iSim-1))>0
+        w_sigma = w(iSim);
+        var2 = sigma_0;
+        n_var = 1;
+        mu = (wlb(iSim) + z_sig*sqrt(var2/n_var)) - yp;
+        T_z_m((end-h0):end) = T_z_p((end-h0):end);
+
+    end
+
+    e_var = e - mu; %Distance of new data from center
+    mu = mu + 1/(1 + n_var)*e_var; %Center update
+    var2  = var2 + e_var*(e - mu)'; %un-normalized covariance matrix
+    n_var = n_var + 1; %Increase number of samples in cluster
+    sig = sqrt(var2/n_var);
+
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+    % simulacije modela
+    um = u;
+    % ym=am*ymZ+bm*um;
+    % ymZ=ym;
+
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+    [T_z_m(iSim), Q_I_m(iSim), Q_D_m(iSim)] = HVAC(T_z_m(iSim-1), T_z_m(iSim-Model.d_I-1), T_z_m(iSim-Model.d_D-1), um, ...
+        T_O_m(iSim-Model.d_I-1), T_O_m(iSim-Model.d_D-1), Q_I_m(iSim-1), Q_D_m(iSim-1), Q_P_m(iSim-1), Model);
+    ym = T_z_m(iSim);
+    %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+    Yp = [Yp; yp];
+    Ym = [Ym; ym];
+    U = [U; up];
+    W = [W; w(iSim)];
+    Ws = [Ws; w_sigma];
+    V = [V; sig];
+    if (mod(iSim,100) == 0)
+        figure(1);
+        subplot(3,1,1:2); hold off;
+        plot(W,'k'); hold on;
+        plot(Yp,'b');
+        plot(Ym,'r');
+        plot(wub,'g--')
+        plot(wlb,'g--')
+        plot(w + 2*dw,'r--')
+        plot(w - 2*dw,'r--')
+        plot(Ws,'k');
+        plot(Ws + z_sig*V,'k--');
+        plot(Ws - z_sig*V,'k--');
+        legend('Reference signal','System output','Model output')
+        xlim('tight')
+        subplot(3,1,3); hold off;
+        plot(U,'b'); hold on;
+        plot(normalize(Q_D_p(1:length(U)-1) + M.act_P*Q_P_p(1:length(U)-1)'),'r');
+        legend('Control signal')
+        xlabel('Time step')
+        pause(0.001)
+        xlim('tight')
+    end
+end
+t2 = clock;
+
+Povprecni_Cas_Enega_Izracuna = etime(t2,t1)/Nsim
+
+
