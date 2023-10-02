@@ -64,6 +64,9 @@ sum_T_z = 0*ones(k_0,1);
 Q_P = Q_P_data;
 u_sum = 0*ones(k_0,1);
 
+yp = T_z;
+noise = M.N
+
 for k = k_0:1:(length(w))
 
 
@@ -71,6 +74,7 @@ for k = k_0:1:(length(w))
     u(k) = M.u_1*(w(k)-T_z(k-1))+  M.u_2*sum_T_z(k);
 
     [T_z(k), Q_I(k), Q_D(k)] = HVAC(T_z(k-1), T_z(k-M.d_I-1), T_z(k-M.d_D-1), u(k-1-M.d_I), T_o_data(k-M.d_I-1), T_o_data(k-M.d_D-1), Q_I(k-1), Q_D(k-1) , Q_P(k-1),  M);
+    yp(k) = T_z(k) + noise*randn(1,1);
     u_sum(k) = u_sum(k-1)+u(k)^2;
 end
 
@@ -78,7 +82,7 @@ if 1
 
     h1 = figure(1);
     subplot(4,1,1:2); hold off;
-    p1 = plot(T_z,'b'); hold on;
+    p1 = plot(yp,'b'); hold on;
     p2 = plot(wub,'k');
     plot(wlb,'k')
     p3 = plot(w,'k--');
@@ -117,10 +121,10 @@ if 1
     %     hcaX.SecondaryLabel.Position(2) = hcaX.SecondaryLabel.Position(2)*1.024;
     %     hcaX.SecondaryLabel.Position(1) = hcaX.SecondaryLabel.Position(1)*1.04;
 
-figure(1);
-name = '..\HVAC_Images\HVAC_PID.pdf';
-exportgraphics(gcf,name,'BackgroundColor','none');
-pause(0.0001)
+    figure(1);
+    name = '..\HVAC_Images\HVAC_PID.pdf';
+    exportgraphics(gcf,name,'BackgroundColor','none');
+    pause(0.0001)
 
 
 end
