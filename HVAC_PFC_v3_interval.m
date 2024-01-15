@@ -1,8 +1,8 @@
 clc; clear all; close all;
 set(groot,'defaultAxesFontSize',10)
+set(0,'defaultTextInterpreter','latex')
 
 color = getcolors(7,"default");
-
 
 if 1
 
@@ -13,7 +13,6 @@ if 1
     c_O = 1; %Outside inforamtion active
 
     k_0 = max([M.d_I,M.d_D])+2;
-
     Nsim = 10000;
     w = 295*ones(Nsim,1);
     w(2000:5000) = 296;
@@ -21,8 +20,13 @@ if 1
     dw = 2;
     wlb = w - dw;
     wub = w + dw;
+    w_shift = 200;
+    wlb_cor = min([[wlb(1:w_shift);wlb(1:end-w_shift)],...
+        [wlb(w_shift+1:end);wlb((end-w_shift+1):end)]],[],2);
+    wub_cor = max([[wub(1:w_shift);wub(1:end-w_shift)],...
+        [wub(w_shift+1:end);wub((end-w_shift+1):end)]],[],2);
 
-    %  proces 1. red
+%  proces 1. red
     Q_I_p = 0*ones(k_0,1);
     Q_D_p = 0*ones(k_0,1);
     T_z_p = w(k_0)*ones(k_0,1);
@@ -34,15 +38,7 @@ if 1
     Model.N = 0; %0.5000;
     Model.K_D = 0.7*M.K_D;  %11.0657;
     Model.tau_D = 0.7*M.tau_D;  %1200;
-    % Model.K_I = M.K_I;  %1;
-    % Model.tau_I = M.tau_I;  %1800;
-    %Model.a_I = M.a_I;  %3;
     Model.b_I = 0.7*M.b_I;  %-117.2899;
-    % Model.u_1 = M.u_1;  %-2.5000;
-    % Model.u_2 = M.u_2; %-1.0000e-03;
-    % Model.u_3 = M.u_3; %80.0000;
-    % Model.d_D = M.d_D; %1;
-    % Model.d_I = M.d_I; %4;
 
     Q_I_m = 0*ones(k_0,1);
     Q_D_m = 0*ones(k_0,1);
@@ -56,70 +52,59 @@ if 1
     % parametri simulacije
     yp = T_z_p(end); ym = T_z_m(end);
 
-    z_sig = 2;
-    n_var_0 = 1;
+    alpha = 0.95;
+    n_var_0 = 10;
     n_var = n_var_0;
-    sigma_0 = n_var*((dw/z_sig))^2;
-    var2 = sigma_0;
-    sig = sqrt(var2/n_var);
+    z_sig =  tinv(alpha, n_var);
+    var_0 = dw;
+    var = var_0;
+    sig = sqrt(var/n_var);
     mu = yp; %(wlb(1) + 3*sqrt(sigma2/n_var));
 
     U = 0*ones(k_0,1); Ym = T_z_m; Yp= T_z_p;  W = T_z_p;  uZ=0; Ws = T_z_p;
     V = sig*ones(k_0,1);
-    Z = z_sig*ones(k_0,1);
+    Z = 2*ones(k_0,1);
 
     % referenèni model
-    ar = 0.90; br = (1-ar); H = 50;
+    ar = 0.90; br = (1-ar); H = 30;
     N1 = 1;
     N2 = H;
     u_sum = 0*ones(k_0,1);
+
     % ---- inicializacija -----
-    swarm_size = 20;
+    swarm_size = 10;
     for i = 1 : swarm_size
         swarm(i, 1, 1) = i;
     end
 
-    u = 0; Maxu = 4; Deltau = 0.005; Delta2u = 0.001;
+    u = 0; Maxu = 4; Deltau = 0.01;
     t1 = clock;
+
+    h0 = max([M.d_I,M.d_D])+2-1;
+    k_tics = 0:floor((h0+H)/10):(h0+H);
+    labels = arrayfun(@(x) sprintf('k%s', num2str(x-h0, '%+d')), k_tics, 'UniformOutput', false);
+    labels{find(k_tics== h0)} = 'k';
+    
+    T_z_m_H = zeros(h0+H,1);
+    Q_I_m_H = zeros(h0+H,1);
+    Q_D_m_H = zeros(h0+H,1);
 
     for iSim = k_0:Nsim
 
-        w_sigma = w(iSim); %min((wlb(iSim) + z_sig*sig),w(iSim));
-        %e = w(iSim)-yp;
-
-        %ymRefH2=ym+e*(1-ar^H/2);
-        % PSO algoritem
-        iterations = 100;
         inertia = 1.0;
         correction_factor = 2;
 
         % ---- inicializacija -----
         for i = 1 : swarm_size
             %      swarm(i, 1, 1) =  u - round(swarm_size/2)*Maxu/swarm_size + i * (Deltau);
-            swarm(i, 1, 1) = Deltau/2 - i * (Deltau/swarm_size) + u ;
+            swarm(i, 1, 1) = Deltau/2- i * (Deltau/swarm_size) + u ;
         end
 
-        %     for i = 1 : swarm_size
-        %         %      swarm(i, 1, 1) =  u - round(swarm_size/2)*Maxu/swarm_size + i * (Deltau);
-        %         swarm(i, 1, 2) =  i * ((wub(iSim)- wlb(iSim))/swarm_size)*0.1 + w(iSim);
-        %     end
-
-        %     swarm_dw = repelem(( min(wlb(iSim) + z_sig*sig, w(iSim))-w(iSim)):...
-        %         ((max(wub(iSim) - z_sig*sig,w(iSim)) - min(wlb(iSim) + z_sig*sig, w(iSim)))/(swarm_size/2-1)):...
-        %         (max(wub(iSim) - z_sig*sig,w(iSim))-w(iSim)),1,2);
-        %
-        % %     if ~isempty(swarm_dw)
-        % %
-        % %
-        % %     else
-        % %         swarm(:, 1, 2) = w(iSim);
-        % %     end
-        %
-        %      swarm(i, 1, 1) =  u - round(swarm_size/2)*Maxu/swarm_size + i * (Deltau);
         swarm(:, 1, 2) =  repmat(floor( 1:swarm_size-swarm_size/2).*((wub(iSim)-wlb(iSim))/swarm_size)*1 + w(iSim),1,2);
-        swarm((swarm(:, 1, 2) < min(wlb(iSim) + z_sig*sig, w(iSim))) |...
-            (swarm(:, 1, 2)  > max(wub(iSim) - z_sig*sig,w(iSim))), 1, 2) = w(iSim);
+%         swarm((swarm(:, 1, 2) < min(wlb(iSim) + z_sig*sig, w(iSim))) |...
+%             (swarm(:, 1, 2)  > max(wub(iSim) - z_sig*sig,w(iSim))), 1, 2) = w(iSim);
 
+        
         swarm(:,3,1) = swarm(:,1,1);
         swarm(:,3,2) = swarm(:,1,2);
         val_0 = 1e5;
@@ -127,27 +112,51 @@ if 1
         swarm(:, 4, 2) = NaN;          % najboljša vrednsot do sedaj
         swarm(:, 2, :) = 0;             % zaèetna hitrost
 
-        term = 1000; termMax = 0.001;
+        term = 1000; termMax = 1e-4;
+
         % izdelaj termination criteria
-        lambda_1 = 1;
-        lambda_2 = 10;
+        lambda_1 = 100;
+        lambda_2 = 2;
         max_iter = 100;
         iter = 0;
+        eb_error = 0;
+        error_weight = 1e5;
         while ((term > termMax) && (iter<max_iter))
             %for iter = 1 : iterations
             iter = iter +1;
             %-- evaluacija pozicije in kriterijske funkcije ---
             for i = 1 : swarm_size
 
-                swarm(i, 1, :) = swarm(i, 1, :) + swarm(i, 2,:);     % popravek pozicije x
+                swarm(i, 1, :) = swarm(i, 1, :) + swarm(i, 2,:); % popravek pozicije x
                 ux = swarm(i, 1, 1);
                 wx = swarm(i, 1, 2);
 
+                if abs(ux-uZ) > Deltau
+                    weightUz =  error_weight;
+                else
+                    weightUz = 0;
+                end
+                %
+
+                if abs(ux) > Maxu
+                    weightU =  error_weight;
+                else
+                    weightU = 0;
+                end
+
+                if (weightU + weightUz) > 0
+                    continue
+                end
+
+                if lambda_1*(ux.^2) > swarm(i, 4, 1)
+                    continue
+                end
+
                 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-                h0 = max([M.d_I,M.d_D])+2-1;
+                
                 T_z_m_H(1:h0) = T_z_m((end-h0+1):end);
-                Q_I_m_H = Q_I_m((end-h0+1):end);
-                Q_D_m_H = Q_D_m((end-h0+1):end);
+                Q_I_m_H(1:h0) = Q_I_m((end-h0+1):end);
+                Q_D_m_H(1:h0) = Q_D_m((end-h0+1):end);
                 T_O_m_H = T_O_m((iSim-h0+1):iSim+H-1);
                 Q_P_m_H = Q_P_m((iSim-h0+1):iSim+H-1);
                 for h = (h0+1):1:(h0+H)
@@ -155,134 +164,66 @@ if 1
                         T_O_m_H(h-Model.d_I-1), T_O_m_H(h-Model.d_D-1), Q_I_m_H(h-1), Q_D_m_H(h-1), Q_P_m_H(h-1), Model);
                 end
                 ymH = T_z_m_H(h0+H);
-                %ymH2 = T_z_m_H(h0+H/2);
+
                 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
                 ePSO = wx - yp;
-                em = (yp - T_z_m_H(h0)) + T_z_m_H;
-                ymRefH=ym+ePSO*(1-ar^H);
-
-
-
-                %             if ((wx < min(wlb(iSim) + z_sig*sig, w(iSim))) || (wx > max(wub(iSim) - z_sig*sig,w(iSim))))  %abs(w-wx) > dw
-                %                 weightW = 10000;
-                %             else
-                %                 weightW = 0;
-                %             end
+                ypH =  yp + (T_z_m_H - T_z_m_H(h0));
+                ymRefH = ym+ePSO*(1-ar^H);
 
                 %
-                elb = wlb(iSim) -(em - z_sig*sig);
-                elb(elb<0) = 0;
-                eub = (em + z_sig*sig) - wub(iSim);
-                eub(eub<0) = 0;
-                eb = elb + eub;
+                elb = w(iSim)-(ypH(end) - z_sig*sig);
+                elb = max(elb, 0);
 
-                %                 %             if any(((em - z_sig*sig) < wlb(iSim)) | ((em + z_sig*sig) > wub(iSim)))
-                %                 %                 weightYm = 100;
-                %                 %             else
-                %                 %                 weightYm = 0;
-                %                 %             end
-
-                if abs(ux-uZ) > Deltau
-                    weightUz =  1e10;
-                else
-                    weightUz = 0;
+                eub = (ypH(end) + z_sig*sig)-w(iSim);
+                eub = max(eub, 0);
+  
+                eb = elb^2 + eub^2;
+                if eb == 2*error_weight^2
+                    disp("Both intrevals are outside the range")
                 end
-                %
+                val = (ymH-ymRefH).^2  + lambda_1*(ux.^2) + lambda_2*sum(eb.^2); % izraèun kriterijske funkcije
 
-                if abs(ux) > Maxu
-                    weightU =  1e10;
-                else
-                    weightU = 0;
-                end
-
-                if (abs(ux)>Delta2u) && (abs(ux - 2*U(iSim)+ U(iSim-1)) > Delta2u)
-                    weight2Uz = 1e10;
-                else
-                    weight2Uz = 0;
-                end
-
-                val = (ymH-ymRefH).^2  + lambda_1*(ux.^2) + lambda_2*sum(eb.^2) + weightU + weightUz + weight2Uz; % izraèun kriterijske funkcije
-                %val= sum(((T_z_m_H(h0+N1:h0+N2-1)-T_z_m_H(h0+N1+1:h0+N2))-(ym+e*(1-ar.^(N1:N2-1))-(ym+e*(1-ar.^(N1+1:N2))))).^2) + weightU + weightUz;
-
-                if val < swarm(i, 4, 1)                 % èe je nova pozicija boljša
+                if val < swarm(i, 4, 1)                 % če je nova pozicija boljša
                     swarm(i, 3, 1) = swarm(i, 1, 1);    % popravek pozicije x,
                     swarm(i, 3, 2) = swarm(i, 1, 2);    % popravek pozicije x,
                     swarm(i, 4, 1) = val;
                     T_z_m_H_best = T_z_m_H; % najboljša vrednsot delca - pBest
-                    if weight2Uz>0
-                        disp('Error seccond derivative')
+                    if sum(eb.^2)>0
+                        eb_error = 1;
                     end
                 end
             end
 
-            [temp, gbest] = min(swarm(:, 4, 1));        % gBest
+            [temp, gbest] = min(swarm(:, 4, 1)); % gBest
 
             swarm(1:swarm_size,1,1);
             term = std(swarm(:,1,2)) + std(swarm(:,1,1));
-
 
             %-- popravek pozicije delca
             for i = 1 : swarm_size
                 swarm(i, 2, :) = rand*inertia*swarm(i, 2, :) + correction_factor*rand*(swarm(i, 3, :) - swarm(i, 1, :)) ...
                     + correction_factor*rand*(swarm(gbest, 3, :) - swarm(i, 1, :));   %x komponenta hitrosti
             end
-            %
-            %% Plotanje swarma
-            %                                 clf
-            %                                 plot(swarm(:, 1, 1),swarm(:, 1, 2)-w(iSim), 'x')   %  izris premikanja delca%
-            %                                 xlim([-5,5]);
-            %                                 ylim([-5,5]);
-            %                                  pause(.2)
+
         end
 
         if (iter>max_iter)
             disp("Max iter")
         end
 
-
-
         u = swarm(gbest,1,1);
-        if (swarm(gbest, 4, 1) >= val_0)
-            u = uZ;
-        end
+        %         if (swarm(gbest, 4, 1) >= val_0)
+        %             u = uZ;
+        %         end
         uZ = u;
-        if abs( u - 2*U(iSim)+ U(iSim-1)) > 1.01*Delta2u
-            disp('Error seccond derivative')
-        end
         wZ = swarm(gbest,1,2);
-
         e = wZ - yp;
-
-        %if (wZ + z_sig*sig) < yp
-        %   sig = (yp - wZ)/(z_sig);
-        %   var2 = (sig^2)*n_var;
-        %end
-
-         if iSim==6000
-            figure(3); hold off;
-            plot(0:h0,Yp((end-h0):end),'b'); hold on;
-            plot(h0:h0+H, em(h0:h0+H),'b--')
-            plot(0:h0,Ym((end-h0):end),'r')
-            plot(h0:h0+H,T_z_m_H_best(h0:h0+H),'r--');
-            plot(h0:h0+H,ym+e*(1-ar.^(0:H)),'k');
-            plot(h0:h0+H,[ym, repelem(ymRefH,1,H)],'m--');
-            xline(h0)
-            legend('Process past','Estimated process future','Model past','Model future','Reference future','Reference PFC')
-           pause(0.0001)
-         end
 
         % simulacija procesa
         d = -0.2; noise = M.N;
         up = u;
         u_sum(iSim) = u_sum(iSim-1)+up^2;
-        %     if iSim > round(2*Nsim/4)
-        %         up = u + d;
-        %     end
-
-        %yp = ap*ypZ + bp*up;
-        %yp = yp + noise*randn(1,1);
-        %ypZ = yp;
 
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         [T_z_p(iSim), Q_I_p(iSim), Q_D_p(iSim)] = HVAC(T_z_p(iSim-1), T_z_p(iSim-M.d_I-1), T_z_p(iSim-M.d_D-1), up,...
@@ -294,7 +235,7 @@ if 1
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         if abs(w(iSim)- w(iSim-1))>0
             %w_sigma = w(iSim);
-            var2 = sigma_0;
+            var = var_0;
             n_var = n_var_0;
             mu = yp;
             T_z_m((end-h0):end) = T_z_p((end-h0):end);
@@ -303,18 +244,16 @@ if 1
 
         e_var = yp - mu; %Distance of new data from center
         mu = mu + 1/(1 + n_var)*e_var; %Center update
-        var2  = var2 + e_var*(yp - mu)'; %un-normalized covariance matrix
+        var  = var + e_var*(yp - mu)'; %un-normalized covariance matrix
         n_var = n_var + 1; %Increase number of samples in cluster
-        sig = sqrt(var2/n_var);
-        
-        z_sig = tinv(0.95, n_var);
-         
+        sig = sqrt(var/n_var);
+
+        z_sig = tinv(alpha, n_var);
+
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
         % simulacije modela
         um = u;
-        % ym=am*ymZ+bm*um;
-        % ymZ=ym;
 
         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
         [T_z_m(iSim), Q_I_m(iSim), Q_D_m(iSim)] = HVAC(T_z_m(iSim-1), T_z_m(iSim-Model.d_I-1), T_z_m(iSim-Model.d_D-1), um, ...
@@ -328,57 +267,22 @@ if 1
         W = [W; w(iSim)];
         Ws = [Ws; wZ];
         V = [V; sig];
-        Z = [Z;z_sig];
+        Z = [Z; z_sig];
+
         if (mod(iSim,100) == 0)
 
-            %         h1 = figure(1);
-            %         subplot(3,1,1:2); hold off;
-            %         plot(Yp,'b'); hold on;
-            %         plot(Ym,'r');
-            %         plot(wub,'k')
-            %         plot(Yp + z_sig*V,'-.',"color",color(1,:));
-            %         plot(wlb,'k')
-            %         %plot(w + 2*dw,'r--')
-            %         %plot(w - 2*dw,'r--')
-            %         %plot(Ws,'k');
-            %
-            %         plot(Yp - z_sig*V,'-.',"color",color(1,:));
-            %         legend('System output','Model output','Reference interval','Confidence interval')
-            %         xlim('tight')
-            %         xlabel('Time step')
-            %
-            %         h2 = figure(2);
-            %         subplot(2,1,1); hold off;
-            %         h2 = plot(U,'b'); hold on;
-            %
-            %         plot(normalize(Q_D_p(1:length(U)-1) + M.act_P*Q_P_p(1:length(U)-1)'),'r');
-            %         legend('Control signal', 'Disturbances energy')
-            %         xlim('tight')
-            %         subplot(2,1,2); hold off;
-            %         plot(u_sum,'r');
-            %         legend('Sum of squared inputs')
-            %         xlabel('Time step')
-            %         pause(0.001)
-            %         xlim('tight')
-            %
             h1 = figure(1);
             set(h1,'Position',[680,558,2*560,420])
             subplot(3,1,1:2); hold off;
             p1 = plot(Yp,'b'); hold on;
-            p2 = plot(Yp + z_sig*V,'-.',"color",color(1,:));
-            plot(Yp - z_sig*V,'-.',"color",color(1,:));
+            p2 = plot(Yp + Z.*V,'-.',"color",color(1,:));
+            plot(Yp - Z.*V,'-.',"color",color(1,:));
             p3 = plot(Ym,'r');
             p4 = plot(wub,'k');
             plot(wlb,'k')
-            %plot(w + 2*dw,'r--')
-            %plot(w - 2*dw,'r--')
-            %plot(Ws,'k');
-
-
             legend([p1,p2,p3,p4],'System output','Confidence interval','Model output','Reference interval','location','best')
             xlim('tight')
             xlabel('Time step')
-
 
             h2 = figure(2);
             subplot(3,1,1); hold off;
@@ -398,35 +302,31 @@ if 1
             legend('Sum of squared inputs','Location','best')
             xlabel('Time step')
             xlim('tight')
-            pause(0.001)
-
+            pause(0.000001)
 
         end
     end
-    t2 = clock;
 
-    save HVAC_PFC_outcov
+    save HVAC_PFC_interval
 
 end
-load HVAC_PFC_outcov
-
-Povprecni_Cas_Enega_Izracuna = etime(t2,t1)/Nsim
+load HVAC_PFC_interval
 
 h1 = figure(1);
 set(h1,'Position',[680,558,2*560,420])
 subplot(3,1,1:2); hold off;
 p1 = plot(Yp,'b'); hold on;
-p2 = plot(Yp + z_sig*V,'-.',"color",color(1,:));
-plot(Yp - z_sig*V,'-.',"color",color(1,:));
+p2 = plot(Yp + Z.*V,'-.',"color",color(1,:));
+plot(Yp - Z.*V,'-.',"color",color(1,:));
 p3 = plot(Ym,'r');
-p4 = plot(wub,'k');
-plot(wlb,'k')
+p4 = plot(wlb_cor,'k--');
+plot(wub_cor,'k--')
+%p5 = plot(w,'k');
 ylim('tight')
 ylabel('Temperature')
-legend([p1,p2,p3,p4],'System output','Confidence interval','Model output','Reference interval','')
+legend([p1,p2,p3,p4],'System output','Confidence interval','Model output','Reference interval')
 xlim('tight')
 xlabel('Time step')
-
 
 h2 = figure(2);
 subplot(3,1,1); hold off;
@@ -440,7 +340,7 @@ legend('Disturbance', 'Control','location','best')
 ylabel({'Thermal','energy'})
 xlim('tight')
 subplot(3,1,3); hold off;
-plot(u_sum,"color",color(1,:));
+plot(u_sum,"color",color(1,:));hold on;
 text(length(u_sum),u_sum(end),['$\leftarrow$',num2str(ceil(u_sum(end)))],'FontSize',8)
 ylabel('Cost')
 legend('Sum of squared inputs','Location','best')
@@ -448,13 +348,12 @@ xlabel('Time step')
 xlim('tight')
 pause(0.001)
 
-
 figure(1);
-name = '..\HVAC_Images\HVAC_PFC_outcov_control.pdf';
+name = '..\HVAC_Images\HVAC_PFC_interval_control.pdf';
 exportgraphics(gcf,name,'BackgroundColor','none');
 pause(0.0001)
 
 figure(2);
-name = '..\HVAC_Images\HVAC_PFC_outcov_cost.pdf';
+name = '..\HVAC_Images\HVAC_PFC_interval_cost.pdf';
 exportgraphics(gcf,name,'BackgroundColor','none');
 pause(0.0001)

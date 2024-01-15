@@ -1,7 +1,6 @@
 clc; clear all; close all;
 set(groot,'defaultAxesFontSize',10)
-
-color = getcolors(7,"default");
+color = getcolors(7, "default");
 
 if 0
 
@@ -68,24 +67,32 @@ if 0
     Z = z_sig*ones(k_0,1);
 
     % referenèni model
-    ar = 0.90; br = (1-ar); H = 10;
+    ar = 0.90; br = (1-ar); H = 30;
     N1 = 1;
     N2 = H;
     u_sum = 0*ones(k_0,1);
+
     % ---- inicializacija -----
     swarm_size = 20;
     for i = 1 : swarm_size
         swarm(i, 1, 1) = i;
     end
 
-    u = 0; Maxu = 1; Deltau = 0.005; Delta2u = 0.001;
+    u = 0; Maxu = 1; Deltau = 0.001;
+    
+    %name_test = 'HVAC_PFC_test';
+    name_test = ['HVAC_PFC_test_delta_U_',num2str(Deltau*1e3)];
 
     termMax = 0.001;
     lambda_1 = 0;
     lambda_2 = 1;
     max_iter = 100;
-
     t1 = clock;
+
+    h0 = max([M.d_I,M.d_D])+2-1;
+    k_tics = 0:floor((h0+H)/10):(h0+H);
+    labels = arrayfun(@(x) sprintf('k%s', num2str(x-h0, '%+d')), k_tics, 'UniformOutput', false);
+    labels{find(k_tics== h0)} = 'k';
 
     for iSim = k_0:Nsim
 
@@ -147,12 +154,6 @@ if 0
                 em = (yp - T_z_m_H(h0)) + T_z_m_H;
                 ymRefH=ym+ePSO*(1-ar^H);
 
-                elb = wlb(iSim) -(em - z_sig*sig);
-                elb(elb<0) = 0;
-                eub = (em + z_sig*sig) - wub(iSim);
-                eub(eub<0) = 0;
-                eb = elb + eub;
-
                 %                 %             if any(((em - z_sig*sig) < wlb(iSim)) | ((em + z_sig*sig) > wub(iSim)))
                 %                 %                 weightYm = 100;
                 %                 %             else
@@ -172,22 +173,17 @@ if 0
                     weightU = 0;
                 end
 
-                if (abs(ux)>Delta2u) && (abs(ux - 2*U(iSim)+ U(iSim-1)) > Delta2u)
-                    weight2Uz = 1e10;
-                else
-                    weight2Uz = 0;
+                if strcmp(name_test,['HVAC_PFC_test_delta_U_',num2str(Deltau*1e3)])
+                    val = (ymH-ymRefH).^2  + lambda_1*(ux.^2) + weightU + weightUz;
+                elseif strcmp(name_test,'HVAC_PFC_test')
+                    val = (ymH-ymRefH).^2  + lambda_1*(ux.^2) + weightU;
                 end
-
-                val = (ymH-ymRefH).^2  + lambda_1*(ux.^2) + lambda_2*sum(eb.^2) + weightU; + weightUz + weight2Uz;
 
                 if val < swarm(i, 4, 1)                 % èe je nova pozicija boljša
                     swarm(i, 3, 1) = swarm(i, 1, 1);    % popravek pozicije x,
                     swarm(i, 3, 2) = swarm(i, 1, 2);    % popravek pozicije x,
                     swarm(i, 4, 1) = val;
                     T_z_m_H_best = T_z_m_H; % najboljša vrednsot delca - pBest
-                    if weight2Uz>0
-                        disp('Error seccond derivative')
-                    end
                 end
             end
 
@@ -218,9 +214,7 @@ if 0
             u = uZ;
         end
         uZ = u;
-        if abs( u - 2*U(iSim)+ U(iSim-1)) > 1.01*Delta2u
-            disp('Error seccond derivative')
-        end
+
         wZ = w(iSim); %swarm(gbest,1,2);
 
         e = wZ - yp;
@@ -230,17 +224,34 @@ if 0
         %   var2 = (sig^2)*n_var;
         %end
 
-        if iSim==6000
-            figure(3); hold off;
+        if iSim == 10
+    
+            figure(3)
+            subplot(2,1,1); hold off;
             plot(0:h0,Yp((end-h0):end),'b'); hold on;
-            plot(h0:h0+H, em(h0:h0+H),'b--')
+            %plot(h0:h0+H, ypH(h0:h0+H),'b--')
             plot(0:h0,Ym((end-h0):end),'r')
             plot(h0:h0+H,T_z_m_H_best(h0:h0+H),'r--');
-            plot(h0:h0+H,ym+e*(1-ar.^(0:H)),'k');
-            plot(h0:h0+H,[ym, repelem(ymRefH,1,H)],'m--');
+            plot(h0:h0+H,ar.^(0:H)*yp+wZ*(1-ar.^(0:H)),'b--');
+            plot(0:h0+H,[Ws(iSim-h0:iSim);repmat(wZ,H,1)],'k');
+            plot(h0:h0+H,ym+e*(1-ar.^(0:H)),'k--');
+            %plot(h0:h0+H,[ym, repelem(ymRefH,1,H)],'m--');
             xline(h0)
-            legend('Process past','Estimated process future','Model past','Model future','Reference future','Reference PFC')
+            xlabel('Time step')
+            ylabel('Temperature [°K]')
+            xlim('tight')
+            xticks(k_tics);
+            xticklabels(labels);
+            legend('Process past','Model past','Model future','Reference value',...
+                'Reference model','Desired model trajectory','location','best',...
+                'FontSize',8)
             pause(0.0001)
+
+            name = ['..\HVAC_Images\',name_test,'.pdf'];
+            exportgraphics(gcf,name,'BackgroundColor','none');
+            pause(0.0001)
+
+
         end
 
         % simulacija procesa
@@ -305,15 +316,15 @@ if 0
 
             h1 = figure(1);
             subplot(3,1,1:2); hold off;
-            p1 = plot(Yp,'b'); hold on;
-            p2 = plot(Yp + z_sig*V,'-.',"color",color(1,:));
+            p11 = plot(Yp,'b'); hold on;
+            p12 = plot(Yp + z_sig*V,'-.',"color",color(1,:));
             plot(Yp - z_sig*V,'-.',"color",color(1,:));
             p3 = plot(Ym,'r');
             p4 = plot(wub,'k');
             plot(wlb,'k')
             p5 = plot(w,'k--');
 
-            legend([p1,p2,p3,p4,p5],'System output','Confidence interval',...
+            legend([p11,p12,p3,p4,p5],'System output','Confidence interval',...
                 'Model output','Reference interval','Reference value','location','best')
             xlim('tight')
             xlabel('Time step')
@@ -343,52 +354,57 @@ if 0
         end
     end
     t2 = clock;
-
-    %save HVAC_PFC_test_delta_U
-    save HVAC_PFC_test
+    save(name_test)
 
 end
 
-load HVAC_PFC_test_delta_U
+load HVAC_PFC_test
 
 Povprecni_Cas_Enega_Izracuna = etime(t2,t1)/Nsim;
 
 h1 = figure(4);
 subplot(3,1,1:2); hold off;
-set(h1,'Position')
-p1 = plot(w,'k--'); hold on;
-
-p2 = plot(Yp,'b'); 
+p11 = plot(w,'k--'); hold on;
+p12 = plot(Yp,'b'); 
 %p3 = plot(Ym,'b--');
-
 ylim('tight')
 ylabel('Temperature')
 subplot(3,1,3); hold off;
-h2 = plot(U,'b');
+p21 = plot(U,'b');hold on;
 ylabel({'Control','signal'})
 xlim('tight')
 xlabel('Time step')
 
-load HVAC_PFC_test
-
-figure(4);
+load HVAC_PFC_test_delta_U_10
+h1 = figure(4);
 subplot(3,1,1:2);
-p4 = plot(Yp,'r'); hold on;
-%p5 = plot(Ym,'r--');
+p14 = plot(Yp,'r'); 
 ylim('tight')
 ylabel('Temperature')
-legend('Reference value','System output with {\Delta}u','System output without {\Delta}u',...
-    'location', 'best')
-xlim('tight') 
-
-subplot(3,1,3); hold on;
-h2 = plot(U,'r');
+subplot(3,1,3);
+p22 = plot(U,'r');
 ylabel({'Control','signal'})
 xlim('tight')
 xlabel('Time step')
-legend('Control signal with {\Delta}u','Control signal without {\Delta}u', 'location', 'best')
-xlim('tight') 
 
+load HVAC_PFC_test_delta_U_1
+h1 = figure(4);
+subplot(3,1,1:2);
+p15 = plot(Yp,'m'); hold on;
+ylim('tight')
+ylabel('Temperature')
+legend('Reference value','Control law without ${\Delta}u$','Control law with ${\Delta}u = 0.01$',...
+    'Control law with ${\Delta}u = 0.001$','location', 'best','interpreter','latex',...
+                'FontSize',10)
+xlim('tight') 
+subplot(3,1,3); hold on;
+p23 = plot(U,'m');
+ylabel({'Control','signal'})
+xlim('tight')
+xlabel('Time step')
+% legend('Control law without ${\Delta}u$','Control law with ${\Delta}u = 0.01$',...
+%     'Control law with ${\Delta}u = 0.001$','location', 'best','interpreter','latex',...
+%                 'FontSize',10)
 
 figure(4);
 name = '..\HVAC_Images\HVAC_PFC_test.pdf';
